@@ -3,8 +3,8 @@
  * Contains all interfaces, types, errors, and utilities
  */
 
-// Interfaces will be exported here
-// export * from './interfaces/index.js';
+// Interfaces are now exported
+export * from './interfaces/index';
 
 // Types are now exported
 export * from './types/index';
