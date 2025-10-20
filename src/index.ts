@@ -5,5 +5,5 @@
 
 export * from './core/index';
 
-// Main library class will be exported here once implemented
-// export { CryptoPaymentGW } from './crypto-payment-gw.js';
+// Main library class - now implemented!
+export { CryptoPaymentGW } from './core/crypto-payment-gw';

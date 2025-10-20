@@ -14,3 +14,6 @@ export * from './types/index';
 
 // Utils are now exported
 export * from './utils/index';
+
+// Main gateway class
+export { CryptoPaymentGW } from './crypto-payment-gw';
