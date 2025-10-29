@@ -370,6 +370,17 @@ export const parseEther = jest.fn().mockImplementation((value: string) => {
   return parseUnits(value, 18);
 });
 
+export const zeroPadValue = jest.fn().mockImplementation((value: string, length: number) => {
+  // Ensure the value starts with '0x'
+  let cleanValue = value.startsWith('0x') ? value.slice(2) : value;
+  
+  // Pad to the required length (in bytes, so multiply by 2 for hex chars)
+  const targetLength = length * 2;
+  cleanValue = cleanValue.padStart(targetLength, '0');
+  
+  return '0x' + cleanValue;
+});
+
 // Transaction utilities
 export const Transaction = {
   from: jest.fn().mockImplementation((serializedTx: string) => {
@@ -432,6 +443,7 @@ export const ethers = {
   parseUnits,
   formatEther,
   parseEther,
+  zeroPadValue,
   Transaction,
   EventLog,
   ContractError,
@@ -451,6 +463,7 @@ export default {
   parseUnits,
   formatEther,
   parseEther,
+  zeroPadValue,
   Transaction,
   EventLog,
   ContractError,

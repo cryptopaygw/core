@@ -209,11 +209,13 @@ type TransactionCallback = (transaction: Transaction) => void;
 
 import * as bitcoin from 'bitcoinjs-lib';
 import { BIP32Interface } from 'bip32';
-import BIP32Factory from 'bip32';
 import * as bip39 from 'bip39';
 import axios, { AxiosInstance } from 'axios';
 import { ECPairInterface, ECPairFactory } from 'ecpair';
 import * as tinysecp256k1 from 'tiny-secp256k1';
+
+// Use CommonJS require for BIP32Factory to avoid import issues
+const BIP32Factory = require('bip32').BIP32Factory;
 
 // Initialize ECPair and BIP32 with secp256k1
 const ECPair = ECPairFactory(tinysecp256k1);

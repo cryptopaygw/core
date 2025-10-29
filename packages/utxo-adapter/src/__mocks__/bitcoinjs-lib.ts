@@ -208,11 +208,62 @@ export const ECPair = {
   }))
 };
 
+// Mock Psbt (Partially Signed Bitcoin Transaction)
+export class Psbt {
+  private inputs: any[] = [];
+  private outputs: any[] = [];
+  private network: any;
+
+  constructor(options: any = {}) {
+    this.network = options.network;
+  }
+
+  static fromHex = jest.fn().mockImplementation((hex: string) => {
+    const psbt = new Psbt();
+    return psbt;
+  });
+
+  addInput = jest.fn().mockImplementation((input: any) => {
+    this.inputs.push(input);
+    return this;
+  });
+
+  addOutput = jest.fn().mockImplementation((output: any) => {
+    this.outputs.push(output);
+    return this;
+  });
+
+  signInput = jest.fn().mockImplementation((inputIndex: number, keyPair: any) => {
+    // Mock signing - just return success
+    return this;
+  });
+
+  validateSignaturesOfAllInputs = jest.fn().mockImplementation((validator: any) => {
+    return true;
+  });
+
+  finalizeAllInputs = jest.fn().mockImplementation(() => {
+    return this;
+  });
+
+  extractTransaction = jest.fn().mockImplementation(() => {
+    return {
+      getId: () => 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+      toHex: () => '020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff'
+    };
+  });
+
+  toHex = jest.fn().mockImplementation(() => {
+    return '020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff';
+  });
+}
+
 export default {
   networks,
   address,
   payments,
   TransactionBuilder,
   Transaction,
-  ECPair
+  ECPair,
+  Psbt
 };

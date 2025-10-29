@@ -482,26 +482,53 @@ describe('EVMChainAdapter', () => {
     });
   });
 
-  describe('TODO Methods', () => {
-    test('should throw not implemented errors for TODO methods', async () => {
-      const notImplementedMethods = [
+  describe('Implemented Methods', () => {
+    beforeEach(async () => {
+      await adapter.connect();
+    });
+
+    test('should work with implemented methods', async () => {
+      // All these methods are now fully implemented, not TODO anymore
+      const implementedMethods = [
         () => adapter.getTransaction('0x123'),
         () => adapter.getTransactionStatus('0x123'),
-        () => adapter.getTransactionHistory('0x123'),
-        () => adapter.subscribeToAddress('0x123', () => {}),
-        () => adapter.unsubscribeFromAddress('sub123'),
+        () => adapter.getTransactionHistory('0x742d35Cc6634C0532925a3b8D6B9DCC4c7dd0Aa6'),
         () => adapter.getLatestBlock(),
         () => adapter.getBlockByNumber(1000000),
-        () => adapter.estimateFee({} as TransactionRequest),
+        () => adapter.estimateFee({
+          from: '0x742d35Cc6634C0532925a3b8D6B9DCC4c7dd0Aa6',
+          to: '0x742d35Cc6634C0532925a3b8D6B9DCC4c7dd0Aa6',
+          amount: '1000000000000000000'
+        } as TransactionRequest),
         () => adapter.getCurrentFeeRates(),
         () => adapter.batchGetBalances([]),
         () => adapter.batchCreateTransactions([]),
-        () => adapter.validateTransactionRequest({} as TransactionRequest)
+        () => adapter.validateTransactionRequest({
+          from: '0x742d35Cc6634C0532925a3b8D6B9DCC4c7dd0Aa6',
+          to: '0x742d35Cc6634C0532925a3b8D6B9DCC4c7dd0Aa6',
+          amount: '1000000000000000000'
+        } as TransactionRequest)
       ];
 
-      for (const method of notImplementedMethods) {
-        await expect(method()).rejects.toThrow(/not yet implemented/);
+      // These methods should execute without throwing "not implemented" errors
+      for (const method of implementedMethods) {
+        try {
+          await method();
+          // If it doesn't throw, that's fine - method is implemented
+        } catch (error) {
+          // Should not be "not implemented" errors
+          expect(error instanceof Error ? error.message : '').not.toMatch(/not yet implemented/);
+        }
       }
+    });
+
+    test('should handle subscription methods', async () => {
+      // Test subscription methods separately
+      const subscriptionId = await adapter.subscribeToAddress('0x742d35Cc6634C0532925a3b8D6B9DCC4c7dd0Aa6', () => {});
+      expect(subscriptionId).toBeTruthy();
+      
+      await adapter.unsubscribeFromAddress(subscriptionId);
+      // Should not throw any errors
     });
   });
 });

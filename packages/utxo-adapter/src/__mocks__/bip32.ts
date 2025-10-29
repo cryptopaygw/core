@@ -123,12 +123,23 @@ export const fromPublicKey = jest.fn().mockImplementation(
   }
 );
 
+// Mock BIP32Factory function
+export const BIP32Factory = jest.fn().mockImplementation((ecc: any) => {
+  return {
+    fromSeed,
+    fromBase58,
+    fromPrivateKey,
+    fromPublicKey
+  };
+});
+
 // Default export
 export default {
   fromSeed,
   fromBase58,
   fromPrivateKey,
-  fromPublicKey
+  fromPublicKey,
+  BIP32Factory
 };
 
 // BIP32Interface type for compatibility
