@@ -1,0 +1,60 @@
+{
+  "name": "@cryptopaygw/core",
+  "version": "1.0.0",
+  "description": "Crypto Payment Gateway - Core Library with interfaces and main gateway implementation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "bip39": "^3.1.0",
+    "crypto-js": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.1",
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.2.0"
+  },
+  "peerDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cryptopaygw/core.git",
+    "directory": "packages/core"
+  },
+  "keywords": [
+    "cryptocurrency",
+    "payment",
+    "gateway",
+    "blockchain",
+    "bitcoin",
+    "ethereum",
+    "interfaces",
+    "core"
+  ],
+  "author": "CryptoPayGW Team",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}
