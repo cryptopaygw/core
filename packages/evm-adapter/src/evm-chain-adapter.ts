@@ -737,63 +737,549 @@ export class EVMChainAdapter implements IChainAdapter {
   // =============================================================================
 
   async getTransaction(hash: string): Promise<Transaction | null> {
-    // TODO: Implement transaction lookup
-    throw new Error('Method getTransaction not yet implemented');
+    if (!this.provider) {
+      throw new Error('Provider not connected');
+    }
+
+    try {
+      const tx = await this.provider.getTransaction(hash);
+      if (!tx) {
+        return null;
+      }
+
+      const receipt = await this.provider.getTransactionReceipt(hash);
+      const currentBlock = await this.provider.getBlockNumber();
+      
+      const transaction: Transaction = {
+        hash: tx.hash,
+        from: tx.from,
+        to: tx.to || '',
+        amount: tx.value.toString(),
+        fee: receipt ? (BigInt(receipt.gasUsed) * BigInt(tx.gasPrice || '0')).toString() : '0',
+        confirmations: receipt ? currentBlock - receipt.blockNumber + 1 : 0,
+        timestamp: receipt ? new Date((await this.provider.getBlock(receipt.blockNumber))!.timestamp * 1000) : new Date(),
+        status: receipt ? (receipt.status === 1 ? 'confirmed' : 'failed') : 'pending'
+      };
+
+      if (receipt?.blockNumber !== undefined) {
+        transaction.blockHeight = receipt.blockNumber;
+      }
+
+      return transaction;
+    } catch (error) {
+      throw new Error(`Failed to get transaction ${hash}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async getTransactionStatus(hash: string): Promise<TransactionStatus> {
-    // TODO: Implement transaction status check
-    throw new Error('Method getTransactionStatus not yet implemented');
+    if (!this.provider) {
+      throw new Error('Provider not connected');
+    }
+
+    try {
+      const [tx, receipt] = await Promise.all([
+        this.provider.getTransaction(hash),
+        this.provider.getTransactionReceipt(hash)
+      ]);
+
+      if (!tx) {
+        throw new Error('Transaction not found');
+      }
+
+      let status: 'pending' | 'confirmed' | 'failed';
+      let confirmations = 0;
+      let blockHeight: number | undefined;
+      let timestamp: Date | undefined;
+
+      if (receipt) {
+        const currentBlock = await this.provider.getBlockNumber();
+        confirmations = currentBlock - receipt.blockNumber + 1;
+        blockHeight = receipt.blockNumber;
+        status = receipt.status === 1 ? 'confirmed' : 'failed';
+        
+        const block = await this.provider.getBlock(receipt.blockNumber);
+        timestamp = new Date(block!.timestamp * 1000);
+      } else {
+        status = 'pending';
+      }
+
+      const transactionStatus: TransactionStatus = {
+        hash,
+        status,
+        confirmations
+      };
+
+      if (blockHeight !== undefined) {
+        transactionStatus.blockHeight = blockHeight;
+      }
+
+      if (timestamp !== undefined) {
+        transactionStatus.timestamp = timestamp;
+      }
+
+      return transactionStatus;
+    } catch (error) {
+      throw new Error(`Failed to get transaction status for ${hash}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async getTransactionHistory(address: string, options?: HistoryOptions): Promise<Transaction[]> {
-    // TODO: Implement transaction history
-    throw new Error('Method getTransactionHistory not yet implemented');
+    if (!this.provider) {
+      throw new Error('Provider not connected');
+    }
+
+    if (!ethers.isAddress(address)) {
+      throw new Error('Invalid address format');
+    }
+
+    try {
+      // Note: This is a basic implementation using event logs
+      // For production, you'd want to use a blockchain indexer API like Alchemy, Infura, or Moralis
+      const currentBlock = await this.provider.getBlockNumber();
+      const startBlock = Math.max(0, currentBlock - 10000); // Last ~10k blocks
+      
+      const sentFilter = {
+        fromBlock: startBlock,
+        toBlock: 'latest',
+        topics: [
+          ethers.id('Transfer(address,address,uint256)'),
+          ethers.zeroPadValue(address, 32)
+        ]
+      };
+
+      const receivedFilter = {
+        fromBlock: startBlock, 
+        toBlock: 'latest',
+        topics: [
+          ethers.id('Transfer(address,address,uint256)'),
+          null,
+          ethers.zeroPadValue(address, 32)
+        ]
+      };
+
+      const [sentLogs, receivedLogs] = await Promise.all([
+        this.provider.getLogs(sentFilter),
+        this.provider.getLogs(receivedFilter)
+      ]);
+
+      const allLogs = [...sentLogs, ...receivedLogs];
+      const transactions: Transaction[] = [];
+
+      // Process logs to build transaction history
+      for (const log of allLogs.slice(0, options?.limit || 50)) {
+        try {
+          const tx = await this.provider.getTransaction(log.transactionHash);
+          const receipt = await this.provider.getTransactionReceipt(log.transactionHash);
+          const block = await this.provider.getBlock(log.blockNumber);
+          
+          if (tx && receipt && block) {
+            transactions.push({
+              hash: tx.hash,
+              from: tx.from,
+              to: tx.to || '',
+              amount: tx.value.toString(),
+              fee: (BigInt(receipt.gasUsed) * BigInt(tx.gasPrice || '0')).toString(),
+              blockHeight: receipt.blockNumber,
+              confirmations: currentBlock - receipt.blockNumber + 1,
+              timestamp: new Date(block.timestamp * 1000),
+              status: receipt.status === 1 ? 'confirmed' : 'failed'
+            });
+          }
+        } catch (error) {
+          console.warn(`Failed to process log for tx ${log.transactionHash}:`, error);
+        }
+      }
+
+      // Sort by timestamp descending and apply filters
+      let filteredTransactions = transactions.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+      if (options?.startDate) {
+        filteredTransactions = filteredTransactions.filter(tx => tx.timestamp >= options.startDate!);
+      }
+
+      if (options?.endDate) {
+        filteredTransactions = filteredTransactions.filter(tx => tx.timestamp <= options.endDate!);
+      }
+
+      return filteredTransactions.slice(options?.offset || 0, (options?.offset || 0) + (options?.limit || 50));
+    } catch (error) {
+      throw new Error(`Failed to get transaction history for ${address}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async subscribeToAddress(address: string, callback: TransactionCallback): Promise<string> {
-    // TODO: Implement address subscription using WebSocket
-    throw new Error('Method subscribeToAddress not yet implemented');
+    if (!this.wsProvider) {
+      throw new Error('WebSocket provider not available for subscriptions');
+    }
+
+    if (!ethers.isAddress(address)) {
+      throw new Error('Invalid address format');
+    }
+
+    try {
+      // Create a unique subscription ID
+      const subscriptionId = `addr_${address}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Subscribe to pending transactions involving this address
+      const filter = {
+        address: null, // Listen to all contracts
+        topics: [
+          null, // Any event
+          [ethers.zeroPadValue(address, 32), null], // Either from or to this address
+          [null, ethers.zeroPadValue(address, 32)]
+        ]
+      };
+
+      // Listen for new blocks and check transactions
+      this.wsProvider.on('block', async (blockNumber: number) => {
+        try {
+          const block = await this.wsProvider!.getBlock(blockNumber, true);
+          if (!block || !block.transactions) return;
+
+          for (const tx of block.transactions) {
+            if (typeof tx === 'string') continue; // Skip transaction hashes, we need full objects
+            
+            const txObj = tx as any;
+            if (txObj.from === address || txObj.to === address) {
+              const receipt = await this.wsProvider!.getTransactionReceipt(txObj.hash);
+              const transaction: Transaction = {
+                hash: txObj.hash,
+                from: txObj.from,
+                to: txObj.to || '',
+                amount: txObj.value.toString(),
+                fee: receipt ? (BigInt(receipt.gasUsed) * BigInt(txObj.gasPrice || '0')).toString() : '0',
+                blockHeight: blockNumber,
+                confirmations: 1,
+                timestamp: new Date(block.timestamp * 1000),
+                status: receipt ? (receipt.status === 1 ? 'confirmed' : 'failed') : 'pending'
+              };
+
+              callback(transaction);
+            }
+          }
+        } catch (error) {
+          console.warn('Error processing block for subscription:', error);
+        }
+      });
+
+      return subscriptionId;
+    } catch (error) {
+      throw new Error(`Failed to subscribe to address ${address}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async unsubscribeFromAddress(subscriptionId: string): Promise<void> {
-    // TODO: Implement unsubscription
-    throw new Error('Method unsubscribeFromAddress not yet implemented');
+    if (!this.wsProvider) {
+      throw new Error('WebSocket provider not available');
+    }
+
+    try {
+      // Remove all listeners (simplified implementation)
+      // In a production system, you'd track individual subscriptions
+      this.wsProvider.removeAllListeners('block');
+    } catch (error) {
+      throw new Error(`Failed to unsubscribe ${subscriptionId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async getLatestBlock(): Promise<BlockInfo> {
-    // TODO: Implement latest block info
-    throw new Error('Method getLatestBlock not yet implemented');
+    if (!this.provider) {
+      throw new Error('Provider not connected');
+    }
+
+    try {
+      const block = await this.provider.getBlock('latest');
+      if (!block) {
+        throw new Error('Unable to fetch latest block');
+      }
+
+      return {
+        number: block.number,
+        hash: block.hash || '',
+        timestamp: new Date(block.timestamp * 1000),
+        transactionCount: block.transactions.length
+      };
+    } catch (error) {
+      throw new Error(`Failed to get latest block: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async getBlockByNumber(blockNumber: number): Promise<BlockInfo> {
-    // TODO: Implement block by number
-    throw new Error('Method getBlockByNumber not yet implemented');
+    if (!this.provider) {
+      throw new Error('Provider not connected');
+    }
+
+    try {
+      const block = await this.provider.getBlock(blockNumber);
+      if (!block) {
+        throw new Error(`Block ${blockNumber} not found`);
+      }
+
+      return {
+        number: block.number,
+        hash: block.hash || '',
+        timestamp: new Date(block.timestamp * 1000),
+        transactionCount: block.transactions.length
+      };
+    } catch (error) {
+      throw new Error(`Failed to get block ${blockNumber}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async estimateFee(request: TransactionRequest): Promise<FeeEstimate> {
-    // TODO: Implement comprehensive fee estimation
-    throw new Error('Method estimateFee not yet implemented');
+    if (!this.provider) {
+      throw new Error('Provider not connected');
+    }
+
+    try {
+      const { from, to, amount, tokenAddress, data } = request;
+
+      // Validate addresses
+      if (!ethers.isAddress(from) || !ethers.isAddress(to)) {
+        throw new Error('Invalid from or to address');
+      }
+
+      let txData = data || '0x';
+      let txValue = '0';
+
+      if (tokenAddress) {
+        // ERC-20 token transfer
+        if (!ethers.isAddress(tokenAddress)) {
+          throw new Error('Invalid token address');
+        }
+        
+        const erc20Abi = ['function transfer(address to, uint256 amount) returns (bool)'];
+        const iface = new ethers.Interface(erc20Abi);
+        txData = iface.encodeFunctionData('transfer', [to, amount]);
+        txValue = '0';
+      } else {
+        // Native token transfer
+        txValue = amount;
+      }
+
+      // Get current fee data
+      const feeData = await this.provider.getFeeData();
+      
+      // Estimate gas
+      const estimatedGas = await this.provider.estimateGas({
+        from,
+        to: tokenAddress || to,
+        value: txValue,
+        data: txData
+      });
+
+      // Get base fee per gas (for EIP-1559 chains)
+      const baseFeePerGas = feeData.gasPrice || ethers.parseUnits('20', 'gwei');
+
+      // Calculate fee estimates (slow, standard, fast)
+      const slowGasPrice = baseFeePerGas;
+      const standardGasPrice = (BigInt(baseFeePerGas) * BigInt(120)) / BigInt(100); // 20% higher
+      const fastGasPrice = (BigInt(baseFeePerGas) * BigInt(150)) / BigInt(100); // 50% higher
+
+      return {
+        slow: (BigInt(estimatedGas) * BigInt(slowGasPrice)).toString(),
+        standard: (BigInt(estimatedGas) * BigInt(standardGasPrice)).toString(),
+        fast: (BigInt(estimatedGas) * BigInt(fastGasPrice)).toString()
+      };
+    } catch (error) {
+      throw new Error(`Failed to estimate fee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async getCurrentFeeRates(): Promise<FeeRates> {
-    // TODO: Implement current fee rates
-    throw new Error('Method getCurrentFeeRates not yet implemented');
+    if (!this.provider) {
+      throw new Error('Provider not connected');
+    }
+
+    try {
+      const feeData = await this.provider.getFeeData();
+      const baseFeePerGas = feeData.gasPrice || ethers.parseUnits('20', 'gwei');
+
+      // Return fee rates in gwei (gas price per unit)
+      const slowRate = ethers.formatUnits(baseFeePerGas, 'gwei');
+      const standardRate = ethers.formatUnits((BigInt(baseFeePerGas) * BigInt(120)) / BigInt(100), 'gwei');
+      const fastRate = ethers.formatUnits((BigInt(baseFeePerGas) * BigInt(150)) / BigInt(100), 'gwei');
+
+      return {
+        slow: slowRate,
+        standard: standardRate,
+        fast: fastRate
+      };
+    } catch (error) {
+      throw new Error(`Failed to get current fee rates: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async batchGetBalances(requests: BatchBalanceRequest[]): Promise<BatchBalanceResult> {
-    // TODO: Implement optimized batch balance operations
-    throw new Error('Method batchGetBalances not yet implemented');
+    const results: BalanceResult[] = [];
+    const errors: string[] = [];
+
+    try {
+      // Process all requests in parallel batches
+      const batchSize = 5; // Smaller batches for balance requests
+      
+      for (let i = 0; i < requests.length; i += batchSize) {
+        const batch = requests.slice(i, i + batchSize);
+        
+        const batchPromises = batch.map(async (request) => {
+          try {
+            return await this.getBalances(request.addresses, request.options);
+          } catch (error) {
+            const errorMsg = `Batch ${i / batchSize + 1} failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            errors.push(errorMsg);
+            return [];
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        
+        // Flatten results from all batches
+        for (const batchResult of batchResults) {
+          results.push(...batchResult);
+        }
+      }
+
+      return {
+        results,
+        errors
+      };
+    } catch (error) {
+      return {
+        results: [],
+        errors: [`Failed to process batch balance requests: ${error instanceof Error ? error.message : 'Unknown error'}`]
+      };
+    }
   }
 
   async batchCreateTransactions(requests: TransactionRequest[]): Promise<UnsignedTransaction[]> {
-    // TODO: Implement batch transaction creation
-    throw new Error('Method batchCreateTransactions not yet implemented');
+    const transactions: UnsignedTransaction[] = [];
+
+    try {
+      // Process requests in smaller batches to avoid overwhelming the RPC
+      const batchSize = 10;
+      
+      for (let i = 0; i < requests.length; i += batchSize) {
+        const batch = requests.slice(i, i + batchSize);
+        
+        const batchPromises = batch.map(async (request) => {
+          try {
+            return await this.createTransaction(request);
+          } catch (error) {
+            throw new Error(`Transaction ${i + batch.indexOf(request) + 1} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        transactions.push(...batchResults);
+      }
+
+      return transactions;
+    } catch (error) {
+      throw new Error(`Failed to create batch transactions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async validateTransactionRequest(request: TransactionRequest): Promise<TransactionValidationResult> {
-    // TODO: Implement comprehensive transaction validation
-    throw new Error('Method validateTransactionRequest not yet implemented');
+    const errors: string[] = [];
+
+    try {
+      const { from, to, amount, tokenAddress, gasPrice, gasLimit } = request;
+
+      // Validate addresses
+      if (!from) {
+        errors.push('From address is required');
+      } else if (!ethers.isAddress(from)) {
+        errors.push('Invalid from address format');
+      }
+
+      if (!to) {
+        errors.push('To address is required');
+      } else if (!ethers.isAddress(to)) {
+        errors.push('Invalid to address format');
+      }
+
+      if (!amount) {
+        errors.push('Amount is required');
+      } else {
+        try {
+          const amountBigInt = BigInt(amount);
+          if (amountBigInt < 0) {
+            errors.push('Amount cannot be negative');
+          }
+        } catch {
+          errors.push('Invalid amount format');
+        }
+      }
+
+      // Validate token address if provided
+      if (tokenAddress && !ethers.isAddress(tokenAddress)) {
+        errors.push('Invalid token address format');
+      }
+
+      // Validate gas price if provided
+      if (gasPrice) {
+        try {
+          const gasPriceBigInt = BigInt(gasPrice);
+          if (gasPriceBigInt <= 0) {
+            errors.push('Gas price must be positive');
+          }
+        } catch {
+          errors.push('Invalid gas price format');
+        }
+      }
+
+      // Validate gas limit if provided
+      if (gasLimit) {
+        try {
+          const gasLimitBigInt = BigInt(gasLimit);
+          if (gasLimitBigInt <= 0) {
+            errors.push('Gas limit must be positive');
+          }
+          if (gasLimitBigInt > 30000000) { // Reasonable upper limit
+            errors.push('Gas limit too high');
+          }
+        } catch {
+          errors.push('Invalid gas limit format');
+        }
+      }
+
+      // Additional validation if provider is available
+      if (this.provider && errors.length === 0) {
+        try {
+          // Check if from address has sufficient balance
+          const balance = await this.provider.getBalance(from);
+          const requiredAmount = tokenAddress ? BigInt(0) : BigInt(amount);
+          
+          if (balance < requiredAmount) {
+            errors.push('Insufficient balance for transaction');
+          }
+
+          // For token transfers, check token balance
+          if (tokenAddress) {
+            try {
+              const tokenBalance = await this.getTokenBalance(from, tokenAddress);
+              if (BigInt(tokenBalance.balance) < BigInt(amount)) {
+                errors.push('Insufficient token balance');
+              }
+            } catch (error) {
+              errors.push('Unable to verify token balance');
+            }
+          }
+        } catch (error) {
+          errors.push('Unable to verify account balance');
+        }
+      }
+
+      return {
+        valid: errors.length === 0,
+        errors
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        errors: [`Validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`]
+      };
+    }
   }
 }
 
