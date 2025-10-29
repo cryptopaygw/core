@@ -8,8 +8,8 @@ import {
   ISeedGenerator,
   EntropyStrength,
   SeedLanguage
-} from '../../src/crypto/interfaces/seed-generator.interface';
-import { SeedGenerator } from '../../src/crypto/implementations/seed-generator';
+} from '../../crypto/interfaces/seed-generator.interface';
+import { SeedGenerator } from '../../crypto/implementations/seed-generator';
 
 describe('SeedGenerator', () => {
   let seedGenerator: ISeedGenerator;

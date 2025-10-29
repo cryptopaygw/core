@@ -3,11 +3,11 @@ import type {
   GatewayStatus,
   GatewayInitOptions,
   ChainRegistrationInfo
-} from '../../src/core/interfaces';
-import type { CryptoPaymentConfig } from '../../src/core/types';
-import type { ISeedGenerator } from '../../src/crypto/interfaces';
-import type { IWalletFactory } from '../../src/wallet/interfaces';
-import type { IChainAdapter } from '../../src/core/interfaces';
+} from '../../core/interfaces';
+import type { CryptoPaymentConfig } from '../../core/types';
+import type { ISeedGenerator } from '../../crypto/interfaces';
+import type { IWalletFactory } from '../../wallet/interfaces';
+import type { IChainAdapter } from '../../core/interfaces';
 
 /**
  * Mock implementation of CryptoPaymentGW for testing

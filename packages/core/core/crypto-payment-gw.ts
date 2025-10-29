@@ -296,15 +296,54 @@ export class CryptoPaymentGW implements ICryptoPaymentGW {
         throw new Error(`Configuration not found for chain '${chainName}'`);
       }
 
-      // In a real implementation, this would dynamically import the adapter
-      // For now, we'll throw an error indicating adapter loading is not implemented
-      throw new Error(`Dynamic adapter loading not yet implemented for '${chainName}'. Please implement adapter loading logic.`);
+      // Dynamic adapter loading based on chain type
+      let adapter: IChainAdapter;
+      
+      // Try to dynamically import the adapter based on the registration path
+      try {
+        const adapterModule = await import(registration.adapterPath);
+        
+        // Try different possible export patterns
+        let AdapterClass;
+        if (registration.chainType === 'evm' && adapterModule.EVMChainAdapter) {
+          AdapterClass = adapterModule.EVMChainAdapter;
+        } else if (registration.chainType === 'utxo' && adapterModule.UTXOChainAdapter) {
+          AdapterClass = adapterModule.UTXOChainAdapter;
+        } else if (adapterModule.default) {
+          AdapterClass = adapterModule.default;
+        } else {
+          // Fallback: try the first exported class
+          const exportKeys = Object.keys(adapterModule);
+          const firstExport = exportKeys.find(key => 
+            typeof adapterModule[key] === 'function' && 
+            key !== 'default' && 
+            key.includes('Adapter')
+          );
+          if (firstExport) {
+            AdapterClass = adapterModule[firstExport];
+          } else {
+            throw new Error(`No suitable adapter class found in module exports: ${exportKeys.join(', ')}`);
+          }
+        }
 
-      // TODO: Implement dynamic adapter loading
-      // const AdapterClass = await import(registration.adapterPath);
-      // const adapter = new AdapterClass.default(chainConfig);
-      // await adapter.connect();
-      // return adapter;
+        adapter = new AdapterClass(chainConfig);
+      } catch (importError) {
+        throw new Error(`Failed to import adapter from ${registration.adapterPath}: ${importError instanceof Error ? importError.message : 'Unknown import error'}. Ensure the adapter package is installed and properly exported.`);
+      }
+
+      // Connect the adapter
+      await adapter.connect();
+      
+      // Update registration status
+      const mutableRegistration = this.chainRegistrations.get(chainName) as {
+        -readonly [K in keyof ChainRegistrationInfo]: ChainRegistrationInfo[K]
+      };
+      if (mutableRegistration) {
+        mutableRegistration.isActive = true;
+        mutableRegistration.lastHealthCheck = new Date();
+      }
+
+      return adapter;
     } catch (error) {
       throw new Error(`Failed to load adapter for chain '${chainName}': ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -374,10 +413,76 @@ export class CryptoPaymentGW implements ICryptoPaymentGW {
    * Get wallet factory for the specified chain
    */
   async getWalletFactory(chainName: string): Promise<IWalletFactory> {
-    // TODO: Implement wallet factory creation from adapter
-    // const adapter = await this.getChainAdapter(chainName);
-    // This would typically call a method on the adapter to create its wallet factory
-    throw new Error(`Wallet factory creation not yet implemented for chain '${chainName}'. Please implement wallet factory creation logic.`);
+    if (!this.isChainSupported(chainName)) {
+      throw new Error(`Chain '${chainName}' is not supported`);
+    }
+
+    if (!this.initialized) {
+      throw new Error('Gateway is not initialized');
+    }
+
+    try {
+      // Get the chain adapter first
+      const adapter = await this.getChainAdapter(chainName);
+      
+      // Get chain configuration
+      const chainConfig = this.config.chains.find(c => c.name === chainName);
+      if (!chainConfig) {
+        throw new Error(`Configuration not found for chain '${chainName}'`);
+      }
+
+      // Create wallet factory based on chain type
+      const registration = this.chainRegistrations.get(chainName);
+      if (!registration) {
+        throw new Error(`Chain '${chainName}' registration not found`);
+      }
+
+      let walletFactory: IWalletFactory;
+
+      // Try to dynamically import the wallet factory from the adapter module
+      try {
+        const adapterModule = await import(registration.adapterPath);
+        
+        // Try different possible wallet factory export patterns
+        let WalletFactoryClass;
+        if (registration.chainType === 'evm' && adapterModule.EVMWalletFactory) {
+          WalletFactoryClass = adapterModule.EVMWalletFactory;
+        } else if (registration.chainType === 'utxo' && adapterModule.UTXOWalletFactory) {
+          WalletFactoryClass = adapterModule.UTXOWalletFactory;
+        } else if (adapterModule.WalletFactory) {
+          WalletFactoryClass = adapterModule.WalletFactory;
+        } else if (adapterModule.default?.WalletFactory) {
+          WalletFactoryClass = adapterModule.default.WalletFactory;
+        } else {
+          // Fallback: try to find any export with 'Factory' in the name
+          const exportKeys = Object.keys(adapterModule);
+          const factoryExport = exportKeys.find(key => 
+            typeof adapterModule[key] === 'function' && 
+            key !== 'default' && 
+            key.toLowerCase().includes('factory')
+          );
+          if (factoryExport) {
+            WalletFactoryClass = adapterModule[factoryExport];
+          } else {
+            throw new Error(`No suitable wallet factory class found in module exports: ${exportKeys.join(', ')}`);
+          }
+        }
+
+        walletFactory = new WalletFactoryClass({
+          chainName: adapter.chainName,
+          chainType: registration.chainType,
+          networkId: adapter.chainId,
+          seedGenerator: this.seedGenerator,
+          chainAdapter: adapter
+        });
+      } catch (importError) {
+        throw new Error(`Failed to import wallet factory from ${registration.adapterPath}: ${importError instanceof Error ? importError.message : 'Unknown import error'}. Ensure the adapter package is installed and exports a wallet factory.`);
+      }
+
+      return walletFactory;
+    } catch (error) {
+      throw new Error(`Failed to create wallet factory for chain '${chainName}': ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   // =============================================================================

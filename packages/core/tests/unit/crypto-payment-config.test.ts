@@ -15,7 +15,7 @@ import {
   LoggingConfig,
   ConfigurationValidator,
   ConfigurationBuilder
-} from '../../src/core/index';
+} from '../../core/index';
 
 describe('CryptoPaymentConfig', () => {
   describe('Configuration Structure', () => {
